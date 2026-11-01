@@ -18,18 +18,76 @@
 
 ## 本分支的修改说明
 
-本分支基于官方 **v2.1.38**，整理了已在 EC20 环境部署验证的通话修复。组合修复版标识为 `2.1.38+dtmf.1`。
+<div align="center">
 
-| 修改 | 解决的问题 |
-| --- | --- |
-| 接听前音频 | 收到有效的临时 SDP 后接入媒体，让运营商提示音有机会在正式接听前传到网页；不把提示音误判成已接通。 |
-| 网页播放恢复 | 音轨恢复或可播放时重试播放，增加“播放通话声音”按钮，供浏览器未自动播放时手动恢复。 |
-| ePDG / IMS 鉴权分离 | 去掉把 IMS 的 ISIM 偏好错误套到 ePDG 的绑定，恢复 ePDG 使用 USIM、IMS 按运营商策略使用 ISIM，修复已复现的美国卡 `9862` 鉴权失败。 |
-| 宽带 DTMF 按键 | 宽带通话同时提供 8 / 16 kHz `telephone-event`，修复已复现的按数字键报错、语音菜单无反应；仍只发送对方协商接受的格式。 |
+**VoWiFi 通话修复版**
 
-**验证结果：**相关后端测试、395 项前端测试及前端构建通过；现场确认美国卡隧道建立、IMS 注册成功，用户确认电话可接通、语音菜单按键恢复。尚未验证所有运营商和语音菜单的兼容性。
+基于 HiDeck v2.1.38 · EC20 环境实测
 
-源码、测试与[详细修复说明](docs/voice-auth-dtmf-fixes.md)均在本分支。未包含设备配置、卡信息、日志或凭据。这里没有发布自定义 Docker 镜像；直接使用下方原版镜像或官方安装脚本不会自动带上这些修复，需要从本分支构建。原项目介绍和安装说明如下。
+<img src="https://img.shields.io/badge/build-2.1.38%2Bdtmf.1-2563eb?style=flat-square" alt="修复版 2.1.38+dtmf.1">
+<img src="https://img.shields.io/badge/IMS-registered-15803d?style=flat-square" alt="实机 IMS 注册通过">
+<img src="https://img.shields.io/badge/DTMF-verified-15803d?style=flat-square" alt="实机按键验证通过">
+
+[详细修复说明](docs/voice-auth-dtmf-fixes.md) · [查看代码差异](https://github.com/pmzz1/hideck/compare/main...fix/voice-auth-dtmf)
+
+</div>
+
+### 四项修复
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<strong>01 · 接听前提示音</strong><br><br>
+收到有效的临时音频协商后，提前接入运营商提示音。<br>
+提示音播放不会把通话错误标记为已接通。
+</td>
+<td width="50%" valign="top">
+<strong>02 · 网页播放恢复</strong><br><br>
+音轨恢复时自动重试播放。<br>
+新增“播放通话声音”按钮，支持手动恢复。
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<strong>03 · 美国卡鉴权</strong><br><br>
+分开处理 ePDG 和 IMS 的鉴权方式。<br>
+修复已复现的 AT&T 卡 <code>9862</code> 鉴权失败。
+</td>
+<td width="50%" valign="top">
+<strong>04 · 数字键 / DTMF</strong><br><br>
+宽带通话同时提供 8 / 16 kHz 按键格式。<br>
+修复已复现的语音菜单不响应数字键的问题。
+</td>
+</tr>
+</table>
+
+### 验证结果
+
+| 实机验证 | 自动化验证 |
+| :--- | :--- |
+| ✓ ePDG 隧道建立、IMS 注册成功 | ✓ 相关后端测试通过 |
+| ✓ 用户确认电话可接通 | ✓ 395 项前端测试通过 |
+| ✓ 用户确认语音菜单按键恢复 | ✓ 前端类型检查与生产构建通过 |
+
+> [!NOTE]
+> 以上是当前 EC20 环境的验证结果，尚未覆盖所有运营商和语音菜单。
+
+<details>
+<summary><strong>展开技术改动与边界</strong></summary>
+
+- **接听前媒体：**有效临时 SDP 发布媒体更新事件；仅为呼出接入早期媒体，不伪造接听状态，也不自动接入来电。
+- **播放恢复：**在音轨 `unmute` / `canplay` 时重试；手动播放不重新拨号、不替换媒体连接、不申请麦克风。麦克风仍需要受信任的 HTTPS 和浏览器授权。
+- **鉴权分离：**移除启动时错误套用的 IMS 鉴权偏好，保留 ePDG 使用 USIM、IMS 按运营商策略使用 ISIM 的独立路径。
+- **DTMF 协商：**宽带 SDP 增加 `telephone-event/16000`，保留 `/8000`；仅发送对方接受的格式，不强行指定未协商的负载类型。
+
+完整测试范围与实现说明见[修复文档](docs/voice-auth-dtmf-fixes.md)。源码提交不包含设备配置、卡信息、日志或凭据。
+
+</details>
+
+> [!IMPORTANT]
+> **使用这些修复需要从本分支构建。** 当前未发布自定义 Docker 镜像；下方官方镜像和安装脚本不会自动包含本分支补丁。
+
+---
 
 Manage USB modems, cellular proxy, SMS, WiFi calling / IMS voice, eSIM, and scheduled tasks from a browser or an AI assistant via MCP.
 
