@@ -1,6 +1,7 @@
 package voice
 
 import (
+	"github.com/iniwex5/vowifi-go/internal/vowifi/logging"
 	"context"
 	"errors"
 	"fmt"
@@ -235,9 +236,11 @@ func configureRelayDTMF(relay *media.RTPRelay, info *SDPInfo) error {
 	}
 	for _, codec := range info.Codecs {
 		if strings.EqualFold(codec.Name, sdpTelephoneEvent) {
+			logging.Info("IMS DTMF negotiated", "payload_type", codec.PayloadType, "clock_rate", codec.ClockRate)
 			return relay.ConfigureDTMF(codec.PayloadType, codec.ClockRate, codec.Fmtp)
 		}
 	}
 	relay.DisableDTMF()
+	logging.Info("IMS DTMF unavailable: remote SDP has no telephone-event")
 	return nil
 }

@@ -39,6 +39,20 @@ export class PhoneMediaController {
   ) {
     this.audio = dependencies.createAudio()
     this.audio.autoplay = true
+    this.audio.addEventListener?.('canplay', () => this.retryPlayback())
+  }
+
+  async resumePlayback() {
+    if (!this.audio.srcObject) throw new Error('通话音轨尚未准备好，请稍后重试')
+    this.audio.muted = false
+    await this.audio.play()
+  }
+
+  private retryPlayback() {
+    if (!this.audio.srcObject) return
+    void this.resumePlayback().catch(() => {
+      this.callbacks.onError('浏览器暂未播放声音，请点击“播放通话声音”')
+    })
   }
 
   async prepare(options: PrepareMediaOptions = {}): Promise<PreparedPhoneMedia> {
@@ -150,9 +164,13 @@ export class PhoneMediaController {
   private attachRemoteAudio(event: RTCTrackEvent) {
     const stream = event.streams[0] || new MediaStream([event.track])
     this.audio.srcObject = stream
-    void this.audio.play().catch((error) => {
-      this.callbacks.onError(toMediaError(error, '浏览器阻止了远端音频播放'))
+    // The track can be announced before the first early-media packet arrives.
+    // Retry when actual audio becomes available, and retain a user-gesture
+    // playback control for browsers that decline delayed autoplay.
+    event.track.addEventListener?.('unmute', () => {
+      if (this.audio.srcObject === stream) this.retryPlayback()
     })
+    this.retryPlayback()
   }
 
   private reportPeerState(peer: RTCPeerConnection) {

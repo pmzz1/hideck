@@ -601,6 +601,17 @@ async function sendDTMF(digit: string) {
           </div>
 
           <template v-else>
+            <div v-if="phone.mediaReady" class="restore-actions">
+              <button
+                type="button"
+                class="restore-button"
+                :disabled="!!action || callEnding"
+                title="重新播放当前通话声音，不重新拨号，也不申请麦克风"
+                @click="runAction('播放通话声音', () => phone.resumePlayback())"
+              >
+                <el-icon><Speaker224Regular /></el-icon>播放通话声音
+              </button>
+            </div>
             <div v-if="!phone.mediaReady" class="restore-actions">
               <button
                 type="button"

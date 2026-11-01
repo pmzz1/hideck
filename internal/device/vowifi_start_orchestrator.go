@@ -291,9 +291,9 @@ func (p *Pool) prepareVoWiFiStartContext(ctx context.Context, deviceID, traceID,
 	if strings.EqualFold(w.Backend.Mode(), backend.BackendPCSC) {
 		startCtx.Mode = runtimehost.StartModeReader
 	}
-	if preferred, ok := akaProvider.(innersim.AKAWithPreferenceProvider); ok {
-		akaProvider = innersim.WrapPreferredAKAProvider(preferred, string(prepared.IMSIdentity.AKAAppPreference))
-	}
+	// Preserve the provider's separate USIM and ISIM entry points. Runtime's
+	// AuthPlan selects USIM for ePDG and the carrier's application for IMS;
+	// pre-binding the IMS preference here incorrectly applies it to ePDG too.
 	startCtx.SIM = runtimehost.NewReaderSIMAdapter(akaProvider)
 	logger.Info("VoWiFi 启动画像已准备",
 		"trace_id", traceID,
@@ -439,9 +439,7 @@ func (p *Pool) prepareCellularStartContext(
 	if strings.EqualFold(w.Backend.Mode(), backend.BackendPCSC) {
 		startCtx.Mode = runtimehost.StartModeReader
 	}
-	if preferred, ok := akaProvider.(innersim.AKAWithPreferenceProvider); ok {
-		akaProvider = innersim.WrapPreferredAKAProvider(preferred, string(prepared.IMSIdentity.AKAAppPreference))
-	}
+	// Keep ePDG and IMS authentication application selection independent.
 	startCtx.SIM = runtimehost.NewReaderSIMAdapter(akaProvider)
 
 	countryProxy, errProxy := resolveCellularIMSCountryProxy(hasInternet, ifaceName, voWiFiProxyResolveRequest{

@@ -61,6 +61,10 @@ func (a *Agent) handleIMS1xxResponse(
 		if err := a.updateRemoteMedia(call, response); err != nil {
 			logging.WarnRate("ims-invite-provisional-sdp", "IMS INVITE 临时响应 SDP 处理失败",
 				"status", response.StatusCode, "err", err)
+		} else {
+			// The validated provisional SDP can carry announcements or ringback
+			// before a final answer. Publish it without marking the call answered.
+			a.emitCallMediaUpdated(call)
 		}
 		if !confirmed {
 			remoteSDP := string(response.Body)

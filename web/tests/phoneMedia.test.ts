@@ -15,7 +15,7 @@ const RECVONLY_PCMU_OFFER = `${PCMU_OFFER}a=recvonly\r\n`
 
 type FakeTrack = MediaStreamTrack & { stopped: boolean }
 
-function mediaFixture(secure = true, connectAutomatically = true, releaseError: Error | null = null) {
+function mediaFixture(secure = true, connectAutomatically = true, releaseError: Error | null = null, blockInitialPlayback = false) {
   const states: PhoneMediaState[] = []
   const track = {
     enabled: true,
@@ -34,6 +34,17 @@ function mediaFixture(secure = true, connectAutomatically = true, releaseError: 
   const requestedOffers: string[] = []
   const releasedMedia: Array<{ mediaId: string; lease: string }> = []
   const microphoneStoppedAtMediaCreation: boolean[] = []
+  const audioEvents = new EventTarget()
+  const playbackErrors: string[] = []
+  let playAttempts = 0
+  const audio = {
+    autoplay: false, srcObject: null, muted: false,
+    addEventListener: audioEvents.addEventListener.bind(audioEvents),
+    play: async () => {
+      playAttempts++
+      if (blockInitialPlayback && playAttempts === 1) throw new Error('NotAllowedError')
+    }
+  } as unknown as HTMLAudioElement
   const dependencies: PhoneMediaDependencies = {
     secureContext: () => secure,
     getUserMedia: async (constraints) => {
@@ -46,7 +57,7 @@ function mediaFixture(secure = true, connectAutomatically = true, releaseError: 
       peers.push(peer)
       return peer as unknown as RTCPeerConnection
     },
-    createAudio: () => ({ autoplay: false, srcObject: null, play: async () => {} }) as unknown as HTMLAudioElement,
+    createAudio: () => audio,
     createMedia: async (sdp) => {
       requestedOffers.push(sdp)
       microphoneStoppedAtMediaCreation.push(track.stopped)
@@ -62,10 +73,17 @@ function mediaFixture(secure = true, connectAutomatically = true, releaseError: 
   }
   const controller = new PhoneMediaController({
     onState: (state) => states.push(state),
-    onError: (message) => assert.fail(message)
+    onError: (message) => {
+      if (blockInitialPlayback) playbackErrors.push(message)
+      else assert.fail(message)
+    }
   }, dependencies)
   return {
     controller,
+    audio,
+    audioEvents,
+    playbackErrors,
+    playAttempts: () => playAttempts,
     states,
     track,
     peers,
@@ -76,6 +94,33 @@ function mediaFixture(secure = true, connectAutomatically = true, releaseError: 
     microphoneStoppedAtMediaCreation: () => microphoneStoppedAtMediaCreation
   }
 }
+
+test('manual playback recovers declined autoplay without redialing or requesting a microphone', async () => {
+  const fixture = mediaFixture(false, true, null, true)
+  await fixture.controller.prepare({ microphone: false })
+  const remoteTrack = new EventTarget() as unknown as MediaStreamTrack
+  const stream = {} as MediaStream
+  const event = new Event('track')
+  Object.assign(event, { track: remoteTrack, streams: [stream] })
+  fixture.peers[0].dispatchEvent(event)
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.equal(fixture.playAttempts(), 1)
+  assert.match(fixture.playbackErrors[0], /播放通话声音/)
+  await fixture.controller.resumePlayback()
+  assert.equal(fixture.playAttempts(), 2)
+  assert.equal(fixture.audio.srcObject, stream)
+  assert.equal(fixture.constraints(), null)
+  assert.equal(fixture.offers().length, 1)
+  assert.deepEqual(fixture.releasedMedia(), [])
+  remoteTrack.dispatchEvent(new Event('unmute'))
+  fixture.audioEvents.dispatchEvent(new Event('canplay'))
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.equal(fixture.playAttempts(), 4)
+  fixture.controller.close()
+  remoteTrack.dispatchEvent(new Event('unmute'))
+  fixture.audioEvents.dispatchEvent(new Event('canplay'))
+  assert.equal(fixture.playAttempts(), 4)
+})
 
 test('refuses microphone access outside a trusted secure context', async () => {
   const fixture = mediaFixture(false)

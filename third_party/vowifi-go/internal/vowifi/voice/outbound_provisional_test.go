@@ -13,6 +13,7 @@ import (
 	"github.com/iniwex5/vowifi-go/internal/vowifi/imscore"
 	"github.com/iniwex5/vowifi-go/internal/vowifi/imsendpoint"
 	"github.com/iniwex5/vowifi-go/internal/vowifi/voice/callstate"
+	"github.com/iniwex5/vowifi-go/internal/vowifi/voice/media"
 )
 
 const reliableEarlyMediaSDP = "v=0\r\no=- 2 2 IN IP4 127.0.0.1\r\ns=ims\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\nm=audio 33000 RTP/AVP 104\r\na=rtpmap:104 AMR-WB/16000\r\n"
@@ -22,6 +23,62 @@ const reliablePreconditionSDP = reliableEarlyMediaSDP +
 	"a=curr:qos remote sendrecv\r\n" +
 	"a=des:qos optional local sendrecv\r\n" +
 	"a=des:qos mandatory remote sendrecv\r\n"
+
+func TestProvisionalMediaUpdateRequiresValidatedRemoteSDP(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		body           string
+		wantMediaEvent bool
+	}{
+		{name: "valid early SDP", body: reliableEarlyMediaSDP, wantMediaEvent: true},
+		{name: "invalid SDP", body: "not an SDP"},
+		{name: "empty SDP"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			agent := NewAgent("early-media-event", nil, nil)
+			call := NewCall(agent, callstate.DirectionOutbound, "early-media-event", "43430")
+			t.Cleanup(call.Cancel)
+			if err := call.TransitionChecked(callstate.StateCalling); err != nil {
+				t.Fatal(err)
+			}
+			relay := media.NewRTPRelay(listenVoiceUDP(t), listenVoiceUDP(t))
+			t.Cleanup(relay.Stop)
+			call.SetRTPRelay(relay)
+			setCallClientSDP(call, []byte(testClientSDP))
+			call.setLocalSDP(testClientSDP, testClientSDP)
+			var eventTypes []string
+			var remoteSDPAtEvent string
+			agent.SetNotifier(func(event events.Event) {
+				eventTypes = append(eventTypes, event.Type())
+				if event.Type() == "CallMediaUpdated" {
+					remoteSDPAtEvent = call.clientRemoteSDPValue()
+				}
+			})
+			if err := agent.handleOutboundProvisional(context.Background(), call, imscore.SIPResponse{
+				StatusCode: 183, Reason: "Session Progress",
+				Headers: map[string]string{"Content-Type": "application/sdp"}, Body: []byte(test.body),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			gotMediaEvent := false
+			for _, eventType := range eventTypes {
+				if eventType == "CallAnswered" {
+					t.Fatal("provisional SDP emitted a false answer")
+				}
+				gotMediaEvent = gotMediaEvent || eventType == "CallMediaUpdated"
+			}
+			if gotMediaEvent != test.wantMediaEvent {
+				t.Fatalf("media event=%t want=%t; events=%v", gotMediaEvent, test.wantMediaEvent, eventTypes)
+			}
+			if test.wantMediaEvent && (remoteSDPAtEvent == "" || remoteSDPAtEvent != call.clientRemoteSDPValue()) {
+				t.Fatal("media event was published before projected remote SDP was available")
+			}
+			if call.CallState() == callstate.StateConnected {
+				t.Fatal("183 response falsely connected the call")
+			}
+		})
+	}
+}
 
 type reliableProvisionalRegistrar struct {
 	conn                *net.UDPConn

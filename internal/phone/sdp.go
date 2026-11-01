@@ -15,6 +15,7 @@ const (
 	amrOAPayloadType   = 114
 	evsPayloadType     = 106
 	dtmfPayloadType    = 101
+	dtmfWBPayloadType  = 96
 )
 
 type rtpEndpoint struct {
@@ -55,9 +56,17 @@ func plainSelectedAudioSDP(port int, endpoint rtpEndpoint) string {
 }
 
 func renderPlainAudioSDP(port int, payloads, attributes []string) string {
+	dtmf := fmt.Sprintf("a=rtpmap:%d telephone-event/8000\r\na=fmtp:%d 0-15", dtmfPayloadType, dtmfPayloadType)
+	for _, attribute := range attributes {
+		if strings.HasPrefix(attribute, "a=rtpmap:") && strings.Contains(attribute, "/16000") {
+			payloads = append(append([]string(nil), payloads...), strconv.Itoa(dtmfWBPayloadType))
+			dtmf = fmt.Sprintf("a=rtpmap:%d telephone-event/16000\r\na=fmtp:%d 0-15\r\n%s", dtmfWBPayloadType, dtmfWBPayloadType, dtmf)
+			break
+		}
+	}
 	return fmt.Sprintf(
-		"v=0\r\no=hideck 0 0 IN IP4 127.0.0.1\r\ns=HiDeck Phone\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\nm=audio %d RTP/AVP %s\r\n%s\r\na=rtpmap:%d telephone-event/8000\r\na=fmtp:%d 0-15\r\na=ptime:20\r\na=sendrecv\r\n",
-		port, strings.Join(payloads, " "), strings.Join(attributes, "\r\n"), dtmfPayloadType, dtmfPayloadType,
+		"v=0\r\no=hideck 0 0 IN IP4 127.0.0.1\r\ns=HiDeck Phone\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\nm=audio %d RTP/AVP %s\r\n%s\r\n%s\r\na=ptime:20\r\na=sendrecv\r\n",
+		port, strings.Join(payloads, " "), strings.Join(attributes, "\r\n"), dtmf,
 	)
 }
 

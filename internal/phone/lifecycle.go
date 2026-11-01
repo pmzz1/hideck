@@ -139,7 +139,7 @@ func (s *Service) bufferPendingCallEvent(event voicehost.CallEvent) bool {
 
 func earlyCallEvent(eventType string) bool {
 	switch eventType {
-	case "CallEnded", "CallFailed", "CallCanceled", "CallRinging", "CallAnswered", "CallFinalized":
+	case "CallEnded", "CallFailed", "CallCanceled", "CallRinging", "CallAnswered", "CallFinalized", "CallMediaUpdated":
 		return true
 	default:
 		return false
@@ -366,11 +366,42 @@ func callDurationSeconds(record CallRecord, endedAt time.Time) int64 {
 func (s *Service) publishMediaUpdate(event voicehost.CallEvent) {
 	s.mu.Lock()
 	call := s.calls[event.CallID]
-	if call != nil && !call.terminal {
+	live := call != nil && !call.terminal
+	var deviceID, mediaID string
+	if live {
 		call.view.Held = event.Held
+		if call.view.Direction == "outbound" && (call.view.Status == StatusCalling || call.view.Status == StatusRinging) {
+			deviceID, mediaID = call.view.DeviceID, call.mediaID
+		}
 	}
 	s.mu.Unlock()
-	if call != nil && !call.terminal {
+	if deviceID != "" && mediaID != "" {
+		s.attachEarlyOutboundMedia(event.CallID, deviceID, mediaID)
+	}
+	if live {
 		s.publish("media_updated", call)
+	}
+}
+
+// Early media must not change answer state or hang up a call when an optional
+// announcement cannot be bridged. The final answer retains its normal checks.
+func (s *Service) attachEarlyOutboundMedia(callID, deviceID, mediaID string) {
+	media := s.media.Get(mediaID)
+	snapshot := s.gateway.ActiveCall(deviceID)
+	if media == nil || snapshot == nil || snapshot.CallID != callID || snapshot.ClientSDP == "" {
+		return
+	}
+	// A hangup or browser reconnect may have happened after the event was
+	// queued. Do not attach an obsolete media session in that case.
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	call := s.calls[callID]
+	if call == nil || call.terminal || call.mediaID != mediaID || call.view.Direction != "outbound" ||
+		(call.view.Status != StatusCalling && call.view.Status != StatusRinging) {
+		return
+	}
+	if err := media.Attach(snapshot.ClientSDP); err != nil {
+		logger.Warn("接听前音频接入失败，继续等待呼叫结果", "device_id", deviceID, "err", err)
+		return
 	}
 }

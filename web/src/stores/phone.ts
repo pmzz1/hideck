@@ -141,6 +141,12 @@ export const usePhoneStore = defineStore('phone', {
       return this.refreshCurrentMedia('two-way')
     },
 
+    async resumePlayback() {
+      if (!mediaController) throw new Error('请先连接通话音频')
+      await mediaController.resumePlayback()
+      this.error = ''
+    },
+
     async enableListenOnlyMedia() {
       return this.refreshCurrentMedia('listen-only')
     },
