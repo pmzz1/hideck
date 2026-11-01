@@ -16,6 +16,21 @@
 
 </div>
 
+## 本分支的修改说明
+
+本分支基于官方 **v2.1.38**，整理了已在 EC20 环境部署验证的通话修复。组合修复版标识为 `2.1.38+dtmf.1`。
+
+| 修改 | 解决的问题 |
+| --- | --- |
+| 接听前音频 | 收到有效的临时 SDP 后接入媒体，让运营商提示音有机会在正式接听前传到网页；不把提示音误判成已接通。 |
+| 网页播放恢复 | 音轨恢复或可播放时重试播放，增加“播放通话声音”按钮，供浏览器未自动播放时手动恢复。 |
+| ePDG / IMS 鉴权分离 | 去掉把 IMS 的 ISIM 偏好错误套到 ePDG 的绑定，恢复 ePDG 使用 USIM、IMS 按运营商策略使用 ISIM，修复已复现的美国卡 `9862` 鉴权失败。 |
+| 宽带 DTMF 按键 | 宽带通话同时提供 8 / 16 kHz `telephone-event`，修复已复现的按数字键报错、语音菜单无反应；仍只发送对方协商接受的格式。 |
+
+**验证结果：**相关后端测试、395 项前端测试及前端构建通过；现场确认美国卡隧道建立、IMS 注册成功，用户确认电话可接通、语音菜单按键恢复。尚未验证所有运营商和语音菜单的兼容性。
+
+源码、测试与[详细修复说明](docs/voice-auth-dtmf-fixes.md)均在本分支。未包含设备配置、卡信息、日志或凭据。这里没有发布自定义 Docker 镜像；直接使用下方原版镜像或官方安装脚本不会自动带上这些修复，需要从本分支构建。原项目介绍和安装说明如下。
+
 Manage USB modems, cellular proxy, SMS, WiFi calling / IMS voice, eSIM, and scheduled tasks from a browser or an AI assistant via MCP.
 
 [Download v2.1.35](https://github.com/yibaiba/hideck/releases/tag/v2.1.35) · [Changelog](CHANGELOG.md) · [Connect an AI assistant](#mcp--ai-assistants)
